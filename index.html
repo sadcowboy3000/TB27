@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Min Fullskärmssida med Video</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      height: 100%;
+      background-color: #1E1C1F; /* Ger svart statusfält i Safari */
+    }
+
+    body {
+      height: 100%;
+      overflow: hidden;
+      font-family: sans-serif;
+      touch-action: manipulation;
+    }
+
+    video#bg-video {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: -1;
+    }
+
+    /* Kortet: bild och videor ligger staplade i samma ruta så inget hoppar */
+    #card {
+      position: relative;
+      width: 95vw;
+      max-width: 550px;
+      aspect-ratio: 1280 / 2020;
+      margin-top: 80px;
+      cursor: pointer;
+      z-index: 2;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: manipulation;
+      background-color: rgb(30, 28, 30); /* samma mörka kant som i videorna */
+      overflow: hidden;
+    }
+
+    /* Bilden placeras exakt där kortet ligger i videobildrutan
+       (uppmätt mot första/sista bildrutan i flip1_1.mp4 / flip1_2.mp4, 1280x2020) */
+    #card img#trigger-image {
+      inset: auto;
+      left: 0.625%;     /*    8 / 1280 */
+      top: 0.347%;      /*    7 / 2020 */
+      width: 99.219%;   /* 1270 / 1280 */
+      height: 99.604%;  /* 2012 / 2020 */
+      object-fit: fill;
+      border-radius: 3.4% / 2.15%; /* klipp bort PNG:ns mörka hörnpixlar */
+    }
+    #card img#trigger-image[data-face="1"] {
+      left: 0.3125%;    /*    4 / 1280 */
+      top: 0.1485%;     /*    3 / 2020 */
+      width: 99.297%;   /* 1271 / 1280 */
+      height: 99.703%;  /* 2014 / 2020 */
+    }
+
+    #card img,
+    #card video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      pointer-events: none;
+      -webkit-user-drag: none;
+    }
+
+    /* Videorna ligger ovanpå bilden men är osynliga tills de faktiskt visar en bildruta */
+    #card video {
+      opacity: 0;
+    }
+    #card video.visible {
+      opacity: 1;
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      flex-direction: column;
+      color: white;
+      text-align: center;
+      background: transparent;
+    }
+
+
+    h1 {
+      font-size: clamp(1.5rem, 5vw, 3rem);
+      text-shadow: 0 0 10px rgba(0, 0, 0, 0.7);
+    }
+
+    video::-webkit-media-controls {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Bakgrundsvideo -->
+  <video id="bg-video" autoplay loop muted playsinline>
+    <source src="videos/bkgf.mp4" type="video/mp4">
+    Din webbläsare stödjer inte videouppspelning.
+  </video>
+
+  <!-- Innehåll ovanpå videon -->
+  <div class="content">
+
+    <!-- Interaktivt kort -->
+    <div id="card" role="button" aria-label="Vänd kortet">
+      <img id="trigger-image" src="assets/förstasida-2.png" data-face="0" alt="" draggable="false" />
+      <video id="flip-0" src="videos/flip1_1.mp4" muted playsinline preload="auto"></video>
+      <video id="flip-1" src="videos/flip1_2.mp4" muted playsinline preload="auto"></video>
+    </div>
+  </div>
+
+  <script>
+    const card   = document.getElementById('card');
+    const image  = document.getElementById('trigger-image');
+    const videos = [document.getElementById('flip-0'), document.getElementById('flip-1')];
+    const faces  = ['assets/förstasida-2.png', 'assets/andrasida.png'];
+
+    // Horisontell förskjutning (% av kortets bredd) per video: 6/1280 för flip1_2.mp4
+    const DRIFT  = [0, 0.46875];
+
+    let state = 0;        // 0 = framsida, 1 = baksida
+    let busy  = false;    // blockera klick medan kortet vänds
+
+    // Förladda och avkoda båda bilderna så bytet sker direkt
+    faces.forEach(src => {
+      const img = new Image();
+      img.src = src;
+      if (img.decode) img.decode().catch(() => {});
+    });
+    // Börja ladda båda videorna direkt
+    videos.forEach(v => v.load());
+
+    // Vänta tills videon faktiskt har ritat en bildruta på skärmen
+    function onFirstFrame(v, cb) {
+      if ('requestVideoFrameCallback' in v) {
+        v.requestVideoFrameCallback(() => cb());
+      } else {
+        const check = () => {
+          if (v.currentTime > 0) { v.removeEventListener('timeupdate', check); requestAnimationFrame(cb); }
+        };
+        v.addEventListener('timeupdate', check);
+      }
+    }
+
+    function flip() {
+      if (busy) return;
+      busy = true;
+
+      const v = videos[state];
+      const nextState = state === 0 ? 1 : 0;
+
+      v.currentTime = 0;
+
+      // flip1_2.mp4 slutar med kortet 6px (av 1280) längre till vänster än flip1_1.mp4 börjar.
+      // Glid de 6px under själva vändningen så slutbilden landar exakt på den statiska bilden.
+      const drift = DRIFT[state];
+      v.style.transition = 'none';
+      v.style.transform = 'translateX(0)';
+
+      onFirstFrame(v, () => {
+        v.classList.add('visible');   // visa videon först när bildruta finns
+        if (drift) {
+          v.style.transition = `transform ${v.duration || 0.4}s linear`;
+          v.style.transform = `translateX(${drift}%)`;
+        }
+      });
+
+      const p = v.play();
+      if (p && p.catch) p.catch(() => { v.classList.remove('visible'); busy = false; });
+
+      v.onended = () => {
+        // Byt bild under videon (videon visar sista bildrutan så länge)
+        image.src = faces[nextState];
+        image.dataset.face = nextState;
+        const ready = image.decode ? image.decode().catch(() => {}) : Promise.resolve();
+        ready.then(() => {
+          requestAnimationFrame(() => {
+            v.classList.remove('visible');
+            state = nextState;
+            busy = false;
+          });
+        });
+      };
+    }
+
+    // Ta bort iOS klick-effekt och reagera direkt vid touch
+    card.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      flip();
+    }, { passive: false });
+    card.addEventListener('click', flip);
+  </script>
+
+</body>
+</html>
