@@ -160,6 +160,10 @@
     // Horisontell förskjutning (% av kortets bredd) per video: 6/1280 för flip1_2.mp4
     const DRIFT  = [0, 0.46875];
 
+    // Uppspelningshastighet för vändvideorna (2 = dubbelt så snabbt)
+    const SPEED  = 2;
+    videos.forEach(v => { v.defaultPlaybackRate = SPEED; v.playbackRate = SPEED; });
+
     let state = 0;        // 0 = framsida, 1 = baksida
     let busy  = false;    // blockera klick medan kortet vänds
 
@@ -202,11 +206,12 @@
       onFirstFrame(v, () => {
         v.classList.add('visible');   // visa videon först när bildruta finns
         if (drift) {
-          v.style.transition = `transform ${v.duration || 0.4}s linear`;
+          v.style.transition = `transform ${(v.duration || 0.4) / SPEED}s linear`;
           v.style.transform = `translateX(${drift}%)`;
         }
       });
 
+      v.playbackRate = SPEED;   // vissa webbläsare återställer hastigheten efter load()
       const p = v.play();
       if (p && p.catch) p.catch(() => { v.classList.remove('visible'); busy = false; });
 
