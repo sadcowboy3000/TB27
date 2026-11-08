@@ -116,7 +116,7 @@
 <body>
 
   <!-- Bakgrundsvideo -->
-  <video id="bg-video" autoplay loop muted playsinline>
+  <video id="bg-video" autoplay loop muted playsinline webkit-playsinline preload="auto" disablepictureinpicture>
     <source src="videos/bkgf.mp4" type="video/mp4">
     Din webbläsare stödjer inte videouppspelning.
   </video>
@@ -133,6 +133,25 @@
   </div>
 
   <script>
+    // Bakgrundsvideo: tvinga igång uppspelning på mobil.
+    // Om autoplay blockeras (t.ex. iPhone i strömsparläge) startar den vid första touch.
+    const bg = document.getElementById('bg-video');
+    bg.muted = true;
+    bg.defaultMuted = true;
+    function startBg() {
+      if (!bg.paused) return;
+      const p = bg.play();
+      if (p && p.catch) p.catch(() => {});
+    }
+    startBg();
+    bg.addEventListener('canplay', startBg);
+    ['touchstart', 'pointerdown', 'click'].forEach(ev =>
+      document.addEventListener(ev, startBg, { passive: true })
+    );
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) startBg();
+    });
+
     const card   = document.getElementById('card');
     const image  = document.getElementById('trigger-image');
     const videos = [document.getElementById('flip-0'), document.getElementById('flip-1')];
